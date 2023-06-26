@@ -1,0 +1,13 @@
+name = "SymmetricSemiImplicitDiffusion"
+uuid = "abdf81f5-9ebd-497e-aaa4-0a6d3c257de0"
+authors = ["Sam Miller <smil@lle.rochester.edu> and contributors"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.7"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
