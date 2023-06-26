@@ -1,7 +1,5 @@
 using Printf, StaticArrays, Polyester
-using InteractiveUtils
 using TimerOutputs
-using BenchmarkTools
 
 """
 The SSIsolver, or Symmetric Semi-Implicit method
