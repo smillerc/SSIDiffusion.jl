@@ -1,3 +1,3 @@
-# SymmetricSemiImplicitDiffusion
+# SSIDiffusion
 
-[![Build Status](https://github.com/smil/SymmetricSemiImplicitDiffusion.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/smil/SymmetricSemiImplicitDiffusion.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Build Status](https://github.com/smil/SSIDiffusion.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/smil/SSIDiffusion.jl/actions/workflows/CI.yml?query=branch%3Amain)

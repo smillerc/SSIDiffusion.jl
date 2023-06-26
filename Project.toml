@@ -1,13 +1,24 @@
-name = "SymmetricSemiImplicitDiffusion"
+name = "SSIDiffusion"
 uuid = "abdf81f5-9ebd-497e-aaa4-0a6d3c257de0"
 authors = ["Sam Miller <smil@lle.rochester.edu> and contributors"]
 version = "1.0.0-DEV"
+
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Polyester = "f517fe37-dbe3-4b94-8317-1923a5111588"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [compat]
 julia = "1.7"
 
 [extras]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
+TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
 
 [targets]
-test = ["Test"]
+test = ["Test", "TestItems", "TestItemRunner", "BenchmarkTools"]
