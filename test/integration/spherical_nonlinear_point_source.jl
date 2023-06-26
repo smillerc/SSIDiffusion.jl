@@ -1,4 +1,4 @@
-using ThermoDiffusionMethods
+using SSIDiffusion
 using Printf
 using CairoMakie
 using Polyester
@@ -68,7 +68,7 @@ function uniform_grid(dx, nghost)
         end
     end
 
-    return ThermoDiffusionMethods.Mesh2D(
+    return SSIDiffusion.Mesh2D(
         x1d, y1d, nghost; meshtype=:cylindrical, axis_of_symmetry=:x
     )
 end

@@ -20,7 +20,6 @@ function stage_convergence(u1, un, nghost)
         resid = sqrt(numerator) / u1_denom
     end
 
-    @show u1_denom, numerator, resid
     return resid
 end
 

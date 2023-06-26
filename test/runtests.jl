@@ -1,6 +1,3 @@
-using SSIDiffusion
-using Test
+using TestItemRunner
 
-@testset "SSIDiffusion.jl" begin
-    # Write your tests here.
-end
+@run_package_tests

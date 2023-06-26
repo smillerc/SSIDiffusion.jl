@@ -1,4 +1,4 @@
-using ThermoDiffusionMethods
+using SSIDiffusion
 using CairoMakie
 using Printf
 
@@ -26,7 +26,7 @@ function wavy_grid(dx, nghost)
         end
     end
 
-    return ThermoDiffusionMethods.Mesh2D(xy_wavy, nghost)
+    return SSIDiffusion.Mesh2D(xy_wavy, nghost)
 end
 
 function rand_grid(dx, nghost)
@@ -55,7 +55,7 @@ function rand_grid(dx, nghost)
         end
     end
 
-    return ThermoDiffusionMethods.Mesh2D(xy_rand, nghost)
+    return SSIDiffusion.Mesh2D(xy_rand, nghost)
 end
 
 function kershaw_grid() end
@@ -72,7 +72,7 @@ function uniform_grid(dx, nghost)
         end
     end
 
-    return ThermoDiffusionMethods.Mesh2D(xy, nghost)
+    return SSIDiffusion.Mesh2D(xy, nghost)
 end
 
 """L2-norm truncation error"""
@@ -81,7 +81,7 @@ function δTʰL2(T, T_exact, mesh)
     vol = mesh.volume
 
     nghost = mesh.nghost
-    CartInd = ThermoDiffusionMethods.getcartind(T, nghost)
+    CartInd = SSIDiffusion.getcartind(T, nghost)
     for idx in CartInd
         err += vol[idx] * (T[idx] - T_exact[idx])^2
     end
@@ -92,7 +92,7 @@ end
 """Max truncation error"""
 function δTʰₘ(T, T_exact, nghost=1)
     err = -Inf
-    CartInd = ThermoDiffusionMethods.getcartind(T, nghost)
+    CartInd = SSIDiffusion.getcartind(T, nghost)
     for idx in CartInd
         err_local = abs(T[idx] - T_exact[idx])
         err = max(err, err_local)

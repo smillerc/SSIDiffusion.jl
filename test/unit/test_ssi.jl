@@ -14,30 +14,31 @@
     yc = [c[2] for c in mesh.centroid]
 
     T = zeros(size(mesh.volume))
+    κ = similar(T)
     T0 = 1
     T = @. abs.(T_init(T0, xc, yc))
 
     Ts = 1e-3
     ϵ0 = 0.2
     ϵ1 = 0.02
-    solver = SSISolver(mesh, Ts, ϵ0, ϵ1)
+    solver = SSISolver2D(mesh, Ts, ϵ0, ϵ1)
 
     η = solver.η
     ξ = solver.ξ
 
-    fill!(solver.κ, 1.0)
+    fill!(κ, 1.0)
 
-    ThermoDiffusionMethods.update_bilinear_coeff!(mesh, ξ, η)
+    SSIDiffusion.update_bilinear_coeff!(mesh, ξ, η)
     @test all(iszero.(ξ))
     @test all(iszero.(η))
 
-    ThermoDiffusionMethods.interp_coeff!(
-        solver.μ, solver.κ, solver.ξ, solver.η, mesh.nghost
+    SSIDiffusion.interp_coeff!(
+        solver.μ, κ, solver.ξ, solver.η, mesh.nghost
     )
     μ = @view solver.μ[:, (begin + nhalo):(end - nhalo), (begin + nhalo):(end - nhalo)]
     @test all(μ .≈ 0.25)
 
-    ThermoDiffusionMethods.vertex_temperatures!(solver.T_vertex, T, solver.μ, mesh.nghost)
+    SSIDiffusion.vertex_temperatures!(solver.T_vertex, T, solver.μ, mesh.nghost)
     Tv_x = @view solver.T_vertex[(begin + nhalo):(end - nhalo), 2]
     Tv_y = @view solver.T_vertex[3, (begin + nhalo):(end - nhalo)]
     @test all(Tv_x .≈ 1.0:0.1:2.0)
@@ -52,14 +53,14 @@ end
     AΔ⁻ = 1.0
     κ = 2.0
     κneighbor = 1.0
-    κface = ThermoDiffusionMethods.face_conductivity(AΔ⁺, AΔ⁻, κ, κneighbor)
+    κface = SSIDiffusion.face_conductivity(AΔ⁺, AΔ⁻, κ, κneighbor)
     @test κface == 1.5
 
     AΔ⁺ = 1.0
     AΔ⁻ = 2.0
     κ = 1.0
     κneighbor = 1.0
-    κface = ThermoDiffusionMethods.face_conductivity(AΔ⁺, AΔ⁻, κ, κneighbor)
+    κface = SSIDiffusion.face_conductivity(AΔ⁺, AΔ⁻, κ, κneighbor)
     @test κface == 1.0
 end
 
@@ -77,7 +78,7 @@ end
     ρ = ones(size(mesh.volume))
 
     Χ = zeros(2, size(ρ)...)
-    ThermoDiffusionMethods.faceweights!(Χ, mesh, cv, ρ)
+    SSIDiffusion.faceweights!(Χ, mesh, cv, ρ)
 
     Χ1 = @view Χ[1, :, :]
     Χ2 = @view Χ[2, :, :]

@@ -7,10 +7,10 @@
 
     bcs = (ilo=:periodic, ihi=:periodic)
 
-    lo_halo_start, lo_halo_end, lo_domn_start, lo_domn_end = ThermoDiffusionMethods.lo_indices(
+    lo_halo_start, lo_halo_end, lo_domn_start, lo_domn_end = SSIDiffusion.lo_indices(
         u, nghost
     )
-    hi_domn_start, hi_domn_end, hi_halo_start, hi_halo_end = ThermoDiffusionMethods.hi_indices(
+    hi_domn_start, hi_domn_end, hi_halo_start, hi_halo_end = SSIDiffusion.hi_indices(
         u, nghost
     )
 
@@ -29,13 +29,13 @@
     ihi_d = @view u[hi_domn_start[1]:hi_domn_end[1]] # ghost section
     ihi_g = @view u[hi_halo_start[1]:hi_halo_end[1]] # domain section
 
-    ThermoDiffusionMethods.applybc!(u, bcs)
+    SSIDiffusion.applybc!(u, bcs)
 
     @test all(ilo_d .== ihi_g)
     @test all(ihi_g .== ilo_d)
 
     bcs_2 = (ilo=(:fixed, 4.5), ihi=:zeroflux)
-    ThermoDiffusionMethods.applybc!(u, bcs_2)
+    SSIDiffusion.applybc!(u, bcs_2)
     @test all(u[1] == 4.5)
     @test all(ihi_g .== ihi_d)
 end
@@ -48,10 +48,10 @@ end
 
     bcs = (ilo=:periodic, ihi=:periodic, jlo=:zeroflux, jhi=(:fixed, 123.0))
 
-    lo_halo_start, lo_halo_end, lo_domn_start, lo_domn_end = ThermoDiffusionMethods.lo_indices(
+    lo_halo_start, lo_halo_end, lo_domn_start, lo_domn_end = SSIDiffusion.lo_indices(
         u, nghost
     )
-    hi_domn_start, hi_domn_end, hi_halo_start, hi_halo_end = ThermoDiffusionMethods.hi_indices(
+    hi_domn_start, hi_domn_end, hi_halo_start, hi_halo_end = SSIDiffusion.hi_indices(
         u, nghost
     )
 
@@ -72,7 +72,7 @@ end
     jlo = @view u[2:9, 1]
     jhi = @view u[2:9, 10]
 
-    ThermoDiffusionMethods.applybc!(u, bcs)
+    SSIDiffusion.applybc!(u, bcs)
 
     @test all(ilo_d .== ihi_g)
     @test all(ihi_g .== ilo_d)

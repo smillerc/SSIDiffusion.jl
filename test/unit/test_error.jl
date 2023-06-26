@@ -5,6 +5,6 @@
     uⁿ⁺¹ = rand(50, 50)
     uⁿ = rand(50, 50)
 
-    bm = @benchmark ThermoDiffusionMethods.stage_convergence($uⁿ⁺¹, $uⁿ, 1)
+    bm = @benchmark SSIDiffusion.stage_convergence($uⁿ⁺¹, $uⁿ, 1)
     @test bm.allocs == 0
 end
