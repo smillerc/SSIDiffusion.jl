@@ -1,6 +1,6 @@
-using SymmetricSemiImplicitDiffusion
+using SSIDiffusion
 using Test
 
-@testset "SymmetricSemiImplicitDiffusion.jl" begin
+@testset "SSIDiffusion.jl" begin
     # Write your tests here.
 end
