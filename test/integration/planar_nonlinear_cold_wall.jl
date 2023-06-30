@@ -101,7 +101,7 @@ function rand_grid(dx, nghost)
 end
 
 nghost = 1
-dx = 0.025/2
+dx = 0.025 / 2
 mesh = uniform_grid(dx, nghost)
 # mesh = rand_grid(dx, nghost)
 # mesh = wavy_grid(dx, nghost)

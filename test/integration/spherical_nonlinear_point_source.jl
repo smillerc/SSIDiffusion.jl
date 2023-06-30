@@ -68,9 +68,7 @@ function uniform_grid(dx, nghost)
         end
     end
 
-    return SSIDiffusion.Mesh2D(
-        x1d, y1d, nghost; meshtype=:cylindrical, axis_of_symmetry=:x
-    )
+    return SSIDiffusion.Mesh2D(x1d, y1d, nghost; meshtype=:cylindrical, axis_of_symmetry=:x)
 end
 
 # Nonlinear thermal conduction

@@ -32,9 +32,7 @@
     @test all(iszero.(ξ))
     @test all(iszero.(η))
 
-    SSIDiffusion.interp_coeff!(
-        solver.μ, κ, solver.ξ, solver.η, mesh.nghost
-    )
+    SSIDiffusion.interp_coeff!(solver.μ, κ, solver.ξ, solver.η, mesh.nghost)
     μ = @view solver.μ[:, (begin + nhalo):(end - nhalo), (begin + nhalo):(end - nhalo)]
     @test all(μ .≈ 0.25)
 

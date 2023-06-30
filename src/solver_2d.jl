@@ -121,13 +121,26 @@ function advance_solution_single_step!(
     allow_subcycle::Bool;
     max_nsubcycles=Inf,
     dt_drop_tolerance=1e-3,
-    dt_ceiling=true
+    dt_ceiling=true,
 )
     nsubcycles = 0
 
     if !allow_subcycle
-        @timeit "solve_single" _solve_single!(SSI, mesh, Tⁿ⁺¹, Tⁿ, ρⁿ, q, cᵥ, κ, Δt,
-            boundary_conditions, update_geo, true, true)
+        @timeit "solve_single" _solve_single!(
+            SSI,
+            mesh,
+            Tⁿ⁺¹,
+            Tⁿ,
+            ρⁿ,
+            q,
+            cᵥ,
+            κ,
+            Δt,
+            boundary_conditions,
+            update_geo,
+            true,
+            true,
+        )
         return nsubcycles
     else
         t = 0.0
@@ -142,8 +155,21 @@ function advance_solution_single_step!(
             # `dt_ceil` limits the timestep to be no more than given by `subcycle_dt`
             dt_ceil = true
             @timeit "solve_single" begin
-                dt_actual = _solve_single!(SSI, mesh, Tⁿ⁺¹, Tⁿ, ρⁿ, q, cᵥ, κ, subcycle_dt,
-                    boundary_conditions, update_geo, false, dt_ceil)
+                dt_actual = _solve_single!(
+                    SSI,
+                    mesh,
+                    Tⁿ⁺¹,
+                    Tⁿ,
+                    ρⁿ,
+                    q,
+                    cᵥ,
+                    κ,
+                    subcycle_dt,
+                    boundary_conditions,
+                    update_geo,
+                    false,
+                    dt_ceil,
+                )
             end
             t += dt_actual
 
@@ -311,7 +337,9 @@ function _solve_single!(
     @timeit "faceweights!" faceweights!(SSI.Χ, mesh, cv, ρⁿ) # update Χ
     @timeit "update_Χ_bc!" update_Χ_bc!(SSI.Χ, nghost) # update Χ for boundary faces
     @timeit "vertex_temperatures!" vertex_temperatures!(SSI.T_vertex, Tⁿ, μ, nghost)
-    @timeit "face_centered_flux!" face_centered_flux!(H, a, b, Tⁿ, SSI.T_vertex, κ, SSI.μ, mesh)
+    @timeit "face_centered_flux!" face_centered_flux!(
+        H, a, b, Tⁿ, SSI.T_vertex, κ, SSI.μ, mesh
+    )
     @timeit "update_Hab_bc!" update_Hab_bc!(H, a, b, bcs, nghost) # update fluxes and a/b coeff for boundary faces
 
     # There are two separate time constraints for the SSI method:
@@ -343,7 +371,6 @@ function _solve_single!(
     Δt = subcycle_Δt
     # Loop until all criteria is satisfied (ϵ0, ϵ1, Ts)
     while true
-
         dt_reduction_needed = false
         if fixed_dt
             Δt = dt
@@ -372,17 +399,19 @@ function _solve_single!(
 
         # Find τᵢⱼ, the temperature increment for the current cell
         @timeit "temp_increment" begin
-            increment_temp!(SSI.τ, ρⁿ, mesh.volume, SSI.H, SSI.a, SSI.b, q, SSI.δ, cv, Δt, looplimits)
+            increment_temp!(
+                SSI.τ, ρⁿ, mesh.volume, SSI.H, SSI.a, SSI.b, q, SSI.δ, cv, Δt, looplimits
+            )
         end
 
         # @timeit "finite_val_check(τ)" finite_val_check(τ, mesh.nghost, "τ")
 
         # Calculate the energy lost (δ̃ᵢⱼₘ) at each face
         @timeit "energy_lost" begin
-            for j in jlo:(jhi+1)
-                for i in ilo:(ihi+1)
-                    δ̃[1, i, j] = (a[1, i, j] * τ[i, j] + b[1, i, j] * τ[i, j-1])
-                    δ̃[2, i, j] = (a[2, i, j] * τ[i, j] + b[2, i, j] * τ[i-1, j])
+            for j in jlo:(jhi + 1)
+                for i in ilo:(ihi + 1)
+                    δ̃[1, i, j] = (a[1, i, j] * τ[i, j] + b[1, i, j] * τ[i, j - 1])
+                    δ̃[2, i, j] = (a[2, i, j] * τ[i, j] + b[2, i, j] * τ[i - 1, j])
                 end
             end
         end
@@ -426,9 +455,7 @@ function _solve_single!(
     return Δt
 end
 
-
 function increment_temp!(τ, ρ, vol, H, a, b, q, δ, cv, Δt, looplimits::NTuple{4,Int})
-
     ϵ_tol = eps(Float64)
     ilo, ihi, jlo, jhi = looplimits
 
@@ -438,8 +465,8 @@ function increment_temp!(τ, ρ, vol, H, a, b, q, δ, cv, Δt, looplimits::NTupl
 
             Mᵢⱼ = ρ[i, j] * vol[i, j]
 
-            H1 = H[1, i, j] - H[1, i, j+1]
-            H2 = H[2, i, j] - H[2, i+1, j]
+            H1 = H[1, i, j] - H[1, i, j + 1]
+            H2 = H[2, i, j] - H[2, i + 1, j]
             H1 = H1 * (abs(H1) >= ϵ_tol)
             H2 = H2 * (abs(H2) >= ϵ_tol)
             # Hsum = round(H1 + H2, sigdigits=SD)
@@ -448,17 +475,16 @@ function increment_temp!(τ, ρ, vol, H, a, b, q, δ, cv, Δt, looplimits::NTupl
             τ[i, j] = (
                 (Δt * (Hsum + q[i, j] * Mᵢⱼ) + δ[i, j]) / (
                     cv[i, j] * Mᵢⱼ +
-                    (a[1, i, j] + a[2, i, j] + b[1, i, j+1] + b[2, i+1, j]) * Δt
+                    (a[1, i, j] + a[2, i, j] + b[1, i, j + 1] + b[2, i + 1, j]) * Δt
                 )
             )
         end
     end
 
-    nothing
+    return nothing
 end
 
 function energy_correction!(δ, Χ, δ̃, Δt::Float64, looplimits::NTuple{4,Int})
-
     ilo, ihi, jlo, jhi = looplimits
 
     @batch for j in jlo:jhi
@@ -467,8 +493,8 @@ function energy_correction!(δ, Χ, δ̃, Δt::Float64, looplimits::NTuple{4,Int
                 (
                     Χ[1, i, j] * δ̃[1, i, j] +
                     Χ[2, i, j] * δ̃[2, i, j] +
-                    (1.0 - Χ[1, i, j+1]) * δ̃[1, i, j+1] +
-                    (1.0 - Χ[2, i+1, j]) * δ̃[2, i+1, j]
+                    (1.0 - Χ[1, i, j + 1]) * δ̃[1, i, j + 1] +
+                    (1.0 - Χ[2, i + 1, j]) * δ̃[2, i + 1, j]
                 ) * Δt
 
             # δ[i, j] = round(δij, sigdigits=SD)
@@ -517,12 +543,12 @@ function calc_timestep(SSI::SSISolver2D, mesh, Tⁿ, ρⁿ, cv, q)
             M = ρⁿ[i, j] * mesh.volume[i, j]
             cvM = cv[i, j] * M
 
-            H1 = H[1, i, j] - H[1, i, j+1]
-            H2 = H[2, i, j] - H[2, i+1, j]
+            H1 = H[1, i, j] - H[1, i, j + 1]
+            H2 = H[2, i, j] - H[2, i + 1, j]
 
             W_T = H1 + H2
 
-            D_T = a[1, i, j] + a[2, i, j] + b[1, i, j+1] + b[2, i+1, j]
+            D_T = a[1, i, j] + a[2, i, j] + b[1, i, j + 1] + b[2, i + 1, j]
 
             Δt = abs(cvM / ((abs(W_T + q[i, j] * M) / ((ϵ0 - ϵ1) * (Ts + Tⁿ[i, j]))) - D_T))
 
@@ -564,12 +590,12 @@ function check_τ_constraint(SSI::SSISolver2D, mesh, T, ρ, cv, q, Δt)
             τ0ᵢⱼ = abs(
                 (
                     (
-                        H[1, i, j] + H[2, i, j] - H[1, i, j+1] - H[2, i+1, j] +
+                        H[1, i, j] + H[2, i, j] - H[1, i, j + 1] - H[2, i + 1, j] +
                         q[i, j] * Mᵢⱼ
                     ) * Δt
                 ) / (
                     cv[i, j] * Mᵢⱼ +
-                    (a[1, i, j] + a[2, i, j] + b[1, i, j+1] + b[2, i+1, j]) * Δt
+                    (a[1, i, j] + a[2, i, j] + b[1, i, j + 1] + b[2, i + 1, j]) * Δt
                 ),
             )
 
@@ -644,11 +670,10 @@ Find the split weights Χ that are proportional to the bulk heat capacities of e
 
     @batch for j in jlo:jhi
         for i in ilo:ihi
-
             C⁺Δᵢⱼ₁ = C⁺Δ[1, i, j] * cv[i, j] * ρ[i, j]
             C⁺Δᵢⱼ₂ = C⁺Δ[2, i, j] * cv[i, j] * ρ[i, j]
-            C⁻Δᵢⱼ₁ = C⁻Δ[1, i, j] * cv[i, j-1] * ρ[i, j-1]
-            C⁻Δᵢⱼ₂ = C⁻Δ[2, i, j] * cv[i-1, j] * ρ[i-1, j]
+            C⁻Δᵢⱼ₁ = C⁻Δ[1, i, j] * cv[i, j - 1] * ρ[i, j - 1]
+            C⁻Δᵢⱼ₂ = C⁻Δ[2, i, j] * cv[i - 1, j] * ρ[i - 1, j]
 
             Χ[1, i, j] = C⁺Δᵢⱼ₁ / (C⁺Δᵢⱼ₁ + C⁻Δᵢⱼ₁)
             Χ[2, i, j] = C⁺Δᵢⱼ₂ / (C⁺Δᵢⱼ₂ + C⁻Δᵢⱼ₂)
@@ -689,7 +714,7 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
     jhi = last(jlohi) - nghost
 
     # Loop through the domain cells
-    iterator_range = CartesianIndices((ilo:(ihi+1), jlo:(jhi+1)))
+    iterator_range = CartesianIndices((ilo:(ihi + 1), jlo:(jhi + 1)))
 
     @batch for idx in iterator_range
         i, j = Tuple(idx)
@@ -698,8 +723,8 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
         x⃗ᵢ₊₁ⱼ = SVector{2,Float64}(view(coords, :, i + 1, j))
         x⃗ᵢⱼ₊₁ = SVector{2,Float64}(view(coords, :, i, j + 1))
         x⃗cᵢⱼ = centroids[i, j]
-        x⃗cᵢⱼ₋₁ = centroids[i, j-1]
-        x⃗cᵢ₋₁ⱼ = centroids[i-1, j]
+        x⃗cᵢⱼ₋₁ = centroids[i, j - 1]
+        x⃗cᵢ₋₁ⱼ = centroids[i - 1, j]
 
         # vector connecting the vertices that define the face
         Ivᵢⱼₘ = @SVector [
@@ -723,20 +748,20 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
 
         # Equations 30 & 31
         ΔTvᵢⱼₘ = @SVector [
-            Tv[i+1, j] - Tv[i, j], # m = 1
-            Tv[i, j+1] - Tv[i, j], # m = 2
+            Tv[i + 1, j] - Tv[i, j], # m = 1
+            Tv[i, j + 1] - Tv[i, j], # m = 2
         ]
 
         ΔTcᵢⱼₘ = @SVector [
-            Tc[i, j] - Tc[i, j-1], # m = 1
-            Tc[i, j] - Tc[i-1, j], # m = 2
+            Tc[i, j] - Tc[i, j - 1], # m = 1
+            Tc[i, j] - Tc[i - 1, j], # m = 2
         ]
 
         # interpolation coefficients used in aᵢⱼₘ and bᵢⱼₘ
-        μaᵢⱼ₁ = μ[1, i, j] - μ[2, i+1, j]
-        μaᵢⱼ₂ = μ[1, i, j] - μ[4, i, j+1]
-        μbᵢⱼ₁ = μ[3, i+1, j] - μ[4, i, j]
-        μbᵢⱼ₂ = μ[3, i, j+1] - μ[2, i, j]
+        μaᵢⱼ₁ = μ[1, i, j] - μ[2, i + 1, j]
+        μaᵢⱼ₂ = μ[1, i, j] - μ[4, i, j + 1]
+        μbᵢⱼ₁ = μ[3, i + 1, j] - μ[4, i, j]
+        μbᵢⱼ₂ = μ[3, i, j + 1] - μ[2, i, j]
 
         # check for machine epsilon (zero-out if less than ~1e-15 for Float64)
         μaᵢⱼ₁ = μaᵢⱼ₁ * (abs(μaᵢⱼ₁) >= ϵ)
@@ -747,8 +772,8 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
         μb = @SVector [μbᵢⱼ₁, μbᵢⱼ₂]
 
         κfᵢⱼₘ = @SVector [
-            face_conductivity(AΔ⁺[1, i, j], AΔ⁻[1, i, j], κ[i, j], κ[i, j-1]),
-            face_conductivity(AΔ⁺[2, i, j], AΔ⁻[2, i, j], κ[i, j], κ[i-1, j]),
+            face_conductivity(AΔ⁺[1, i, j], AΔ⁻[1, i, j], κ[i, j], κ[i, j - 1]),
+            face_conductivity(AΔ⁺[2, i, j], AΔ⁻[2, i, j], κ[i, j], κ[i - 1, j]),
         ]
 
         # these terms are re-used in 3 equations
@@ -807,9 +832,9 @@ function vertex_temperatures!(
 
         Tvertex[i, j] = (
             μᵢⱼ[1] * Tcell[i, j] +
-            μᵢⱼ[2] * Tcell[i-1, j] +
-            μᵢⱼ[3] * Tcell[i-1, j-1] +
-            μᵢⱼ[4] * Tcell[i, j-1]
+            μᵢⱼ[2] * Tcell[i - 1, j] +
+            μᵢⱼ[3] * Tcell[i - 1, j - 1] +
+            μᵢⱼ[4] * Tcell[i, j - 1]
         )
     end
 
@@ -841,9 +866,9 @@ function interp_coeff!(
             # Eq. 38
             βᵢⱼ = SVector{4,T}(
                 κcell[i, j] * (1 + ξ[i, j]) * (1 + η[i, j]),
-                κcell[i-1, j] * (1 - ξ[i, j]) * (1 + η[i, j]),
-                κcell[i-1, j-1] * (1 - ξ[i, j]) * (1 - η[i, j]),
-                κcell[i, j-1] * (1 + ξ[i, j]) * (1 - η[i, j]),
+                κcell[i - 1, j] * (1 - ξ[i, j]) * (1 + η[i, j]),
+                κcell[i - 1, j - 1] * (1 - ξ[i, j]) * (1 - η[i, j]),
+                κcell[i, j - 1] * (1 + ξ[i, j]) * (1 - η[i, j]),
             )
 
             βᵢⱼsum = sum(βᵢⱼ)
@@ -884,12 +909,12 @@ function update_Χ_bc!(Χ, nghost)
     # for all BC types
     for j in jlohi
         Χ[2, ilo, j] = 1
-        Χ[2, ihi+1, j] = 0
+        Χ[2, ihi + 1, j] = 0
     end
 
     for i in ilohi
         Χ[1, i, jlo] = 1
-        Χ[1, i, jhi+1] = 0
+        Χ[1, i, jhi + 1] = 0
     end
 
     return nothing
@@ -908,12 +933,12 @@ function update_Hab_bc!(H, a, b, bcs, nghost)
     # for all BC types
     for j in jlohi
         b[2, ilo, j] = 0
-        a[2, ihi+1, j] = 0
+        a[2, ihi + 1, j] = 0
     end
 
     for i in ilohi
         b[1, i, jlo] = 0
-        a[1, i, jhi+1] = 0
+        a[1, i, jhi + 1] = 0
     end
 
     # for flux-specified types
@@ -939,17 +964,17 @@ function update_Hab_bc!(H, a, b, bcs, nghost)
     # ihi BC
     if bcs.ihi === :zeroflux
         for j in jlohi
-            H[2, ihi+1, j] = 0
-            a[2, ihi+1, j] = 0
-            b[2, ihi+1, j] = 0
+            H[2, ihi + 1, j] = 0
+            a[2, ihi + 1, j] = 0
+            b[2, ihi + 1, j] = 0
         end
 
     elseif bcs.ihi isa Tuple{Symbol,Number}
         if bcs.ihi[1] === :flux
             for j in jlohi
-                H[2, ihi+1, j] = bcs.ihi[2]
-                a[2, ihi+1, j] = 0
-                b[2, ihi+1, j] = 0
+                H[2, ihi + 1, j] = bcs.ihi[2]
+                a[2, ihi + 1, j] = 0
+                b[2, ihi + 1, j] = 0
             end
         end
     end
@@ -975,17 +1000,17 @@ function update_Hab_bc!(H, a, b, bcs, nghost)
     # jhi BC
     if bcs.jhi === :zeroflux
         for i in ilohi
-            H[1, i, jhi+1] = 0
-            a[1, i, jhi+1] = 0
-            b[1, i, jhi+1] = 0
+            H[1, i, jhi + 1] = 0
+            a[1, i, jhi + 1] = 0
+            b[1, i, jhi + 1] = 0
         end
 
     elseif bcs.jhi isa Tuple{Symbol,Number}
         if bcs.jhi[1] === :flux
             for i in ilohi
-                H[1, i, jhi+1] = bcs.jhi[2]
-                a[1, i, jhi+1] = 0
-                b[1, i, jhi+1] = 0
+                H[1, i, jhi + 1] = bcs.jhi[2]
+                a[1, i, jhi + 1] = 0
+                b[1, i, jhi + 1] = 0
             end
         end
     end
@@ -1015,9 +1040,9 @@ function update_bilinear_coeff!(
         for i in ilo:ihi
             x0 = SVector{2,Float64}(view(mesh.coords, :, i, j))
             x1 = mesh.centroid[i, j]
-            x2 = mesh.centroid[i-1, j]
-            x3 = mesh.centroid[i-1, j-1]
-            x4 = mesh.centroid[i, j-1]
+            x2 = mesh.centroid[i - 1, j]
+            x3 = mesh.centroid[i - 1, j - 1]
+            x4 = mesh.centroid[i, j - 1]
 
             # x0 = mesh.centroid[i, j]
             # x1 = SVector{2,Float64}(view(mesh.coords, :, i, j))
@@ -1071,7 +1096,7 @@ function get_valid_root(roots)
             return r * (abs(r) >= ϵ)
         end
     end
-    error("unable to find roots!")
+    return error("unable to find roots!")
 end
 
 function get_c(x0, x1, x2, x3, x4)
