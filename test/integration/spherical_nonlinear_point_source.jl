@@ -88,6 +88,7 @@ bcs = (ilo=:reflect, ihi=:zeroflux, jlo=:reflect, jhi=:zeroflux)
 T = zeros(size(mesh.volume))
 Tⁿ⁺¹ = zeros(size(T))
 q = zeros(size(T))
+κ = zeros(size(T))
 ρ = zeros(size(T))
 cᵥ = zeros(size(T))
 
@@ -124,7 +125,7 @@ tfinal = 0.3
 Ts = 1e-3 # max change in T per timestep
 ϵ0 = 0.1 # stability constraints for the SSI method
 ϵ1 = 0.02 # stability constraints for the SSI method
-solver = SSISolver(mesh, Ts, ϵ0, ϵ1)
+solver = SSISolver2D(mesh, Ts, ϵ0, ϵ1)
 # copy!(solver.q, q)
 
 # -----------------
@@ -136,7 +137,7 @@ global cycle = 0
 cycle_max = Inf
 global update_mesh = true
 
-update_κ_cell!(solver.κ, κ0, T, n)
+update_κ_cell!(κ, κ0, T, n)
 
 while t <= tfinal && cycle <= cycle_max
     if cycle == 0
@@ -155,7 +156,7 @@ while t <= tfinal && cycle <= cycle_max
     global update_mesh = false
 
     copy!(T, Tⁿ⁺¹)
-    update_κ_cell!(solver.κ, κ0, Tⁿ⁺¹, n)
+    update_κ_cell!(κ, κ0, Tⁿ⁺¹, n)
 
     global t += Δt
     global Δt = dtnext

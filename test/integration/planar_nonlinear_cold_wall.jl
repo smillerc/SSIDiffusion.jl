@@ -101,7 +101,7 @@ function rand_grid(dx, nghost)
 end
 
 nghost = 1
-dx = 0.025
+dx = 0.025/2
 mesh = uniform_grid(dx, nghost)
 # mesh = rand_grid(dx, nghost)
 # mesh = wavy_grid(dx, nghost)
@@ -127,8 +127,8 @@ n = 3 # conductivity coeff in κ = κ0 * T^n
 cᵥ = ones(size(T))
 
 t0 = 0
-tfinal = 1.0
-Δt = 1e-4
+tfinal = 0.2
+Δt = 5e-6
 
 # Stability criteria
 Ts = 1e-3
@@ -139,7 +139,7 @@ solver = SSISolver2D(mesh, Ts, ϵ0, ϵ1)
 
 global t = t0
 global cycle = 0
-cycle_max = 10_000
+cycle_max = Inf
 update_mesh = false # the mesh is static
 allow_subcycle = true
 update_κ_cell!(κ, κ0, T, n)
@@ -214,6 +214,8 @@ ax2 = Axis(
 
 hm = heatmap!(ax, x, y, T2d; colormap=Reverse(:RdBu))
 Colorbar(fig[1, 2], hm; label="Temperature")
+xlims!(ax, 0, 1)
+ylims!(ax, 0, 1)
 
 scatterlines!(ax2, x1d, T1d)
 

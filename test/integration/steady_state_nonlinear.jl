@@ -87,7 +87,7 @@ function δTʰL2(T, T_exact, mesh)
 end
 
 """Max truncation error"""
-function δTʰₘ(T, T_exact, nghost=1)
+function δTʰₘ(T, T_exact, nghost)
     err = -Inf
     CartInd = SSIDiffusion.getcartind(T, nghost)
     for idx in CartInd
