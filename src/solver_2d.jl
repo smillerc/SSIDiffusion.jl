@@ -60,12 +60,9 @@ function SSISolver2D(mesh::Mesh2D, Ts, ϵ0=0.2, ϵ1=0.05, fluxlimiter=1.0)
     update_bilinear_coeff!(mesh, ξ, η)
 
     return SSISolver2D(
-        # zeros(M, N), # Tⁿ⁺¹::AA1 # next temperature [i,j]
         Tvertex, # ::AA1 # vertex temperature [i,j]
-        # zeros(M, N), # κ::AA1 # cell conductivity [I,j]
         zeros(M, N), # τ::AA1 # temperature increment for this step [i,j]
         zeros(M, N), # δ::AA1 # energy lost (per-cell) last timestep [i,j]
-        # zeros(M, N), # q::AA1 # source term [i,j]
         zeros(2, M, N), # δ̃::AA2 # energy lost (per-face) during the last timestep [i,j]
         zeros(2, M, N), # a::AA1 # SSI coefficient [1:2,i,j]
         zeros(2, M, N), # b::AA1 # SSI coefficient [1:2,i,j]
@@ -124,26 +121,13 @@ function advance_solution_single_step!(
     allow_subcycle::Bool;
     max_nsubcycles=Inf,
     dt_drop_tolerance=1e-3,
-    dt_ceiling=true,
+    dt_ceiling=true
 )
     nsubcycles = 0
 
     if !allow_subcycle
-        @timeit "solve_single" _solve_single!(
-            SSI,
-            mesh,
-            Tⁿ⁺¹,
-            Tⁿ,
-            ρⁿ,
-            q,
-            cᵥ,
-            κ,
-            Δt,
-            boundary_conditions,
-            update_geo,
-            true,
-            true,
-        )
+        @timeit "solve_single" _solve_single!(SSI, mesh, Tⁿ⁺¹, Tⁿ, ρⁿ, q, cᵥ, κ, Δt,
+            boundary_conditions, update_geo, true, true)
         return nsubcycles
     else
         t = 0.0
@@ -153,30 +137,18 @@ function advance_solution_single_step!(
                 error("Maximum SSI subcycle limit ($max_nsubcycles) reached")
             end
 
-            # when subcycling is allowed, it returns the timestep that it actually took (can be more or less than specified by Δt)
-            # and `dt_ceil` limits the timestep to be no more than given by `subcycle_dt`
+            # when subcycling is allowed, it returns the timestep that it actually took 
+            # (can be more or less than specified by Δt) and
+            # `dt_ceil` limits the timestep to be no more than given by `subcycle_dt`
             dt_ceil = true
             @timeit "solve_single" begin
-                dt_actual = _solve_single!(
-                SSI,
-                mesh,
-                Tⁿ⁺¹,
-                Tⁿ,
-                ρⁿ,
-                q,
-                cᵥ,
-                κ,
-                subcycle_dt,
-                boundary_conditions,
-                update_geo,
-                false,
-                dt_ceil,
-            )
+                dt_actual = _solve_single!(SSI, mesh, Tⁿ⁺¹, Tⁿ, ρⁿ, q, cᵥ, κ, subcycle_dt,
+                    boundary_conditions, update_geo, false, dt_ceil)
             end
             t += dt_actual
 
             @timeit "next_timestep" begin
-            _, dt_next = next_timestep(Δt, dt_actual)
+                _, dt_next = next_timestep(Δt, dt_actual)
             end
 
             # Catch an overshoot of Δt
@@ -301,7 +273,7 @@ function _solve_single!(
     dt_ceiling=true,
 ) where {NT}
     ϵ_tol = 10eps(NT)
-    
+
     @timeit "applybc!" applybc!(Tⁿ, bcs, mesh.nghost) # update the ghost cell temperatures
 
     nghost = mesh.nghost # number of ghost/halo cells
@@ -323,8 +295,6 @@ function _solve_single!(
     δ̃ = SSI.δ̃ # energy lost (per-face) during the last timestep
     a = SSI.a # SSI coefficient [i,j]
     b = SSI.b # SSI coefficient [i,j]
-    Χ = SSI.Χ # split weight
-    vol = mesh.volume # cell volume [i,j]
 
     ϵ1 = get_ϵ1(SSI)
     ϵ0 = get_ϵ0(SSI)
@@ -350,6 +320,7 @@ function _solve_single!(
     # Each constraint must be checked individualy (and in order listed)
     global Δt = dt
     global subcycle_Δt = 0.0
+
     if fixed_dt
         subcycle_Δt = dt
     else
@@ -358,6 +329,10 @@ function _solve_single!(
             Δt_max = dt
         end
         subcycle_Δt = Δt_max
+        # if subcycle_Δt > dt
+        #     info_str = @sprintf("SSIDiffusion -- Reducing the timestep to the maximum allowable (%.3e -> %.3e)", subcycle_Δt, dt)
+        #     @info info_str
+        # end
     end
 
     # don't exceed the specified time step, e.g., when this is dictated by other external constraints
@@ -365,50 +340,51 @@ function _solve_single!(
         subcycle_Δt = min(subcycle_Δt, dt)
     end
 
+    Δt = subcycle_Δt
     # Loop until all criteria is satisfied (ϵ0, ϵ1, Ts)
     while true
+
+        dt_reduction_needed = false
         if fixed_dt
             Δt = dt
         else
             while true
                 @timeit "check_τ_constraint" begin
-                valid_dt_ϵ0, max_ΔT_ϵ0 = check_τ_constraint(
-                    SSI, mesh, Tⁿ, ρⁿ, cv, q, subcycle_Δt
-                )
-            end
+                    valid_dt_ϵ0, max_ΔT_ϵ0 = check_τ_constraint(
+                        SSI, mesh, Tⁿ, ρⁿ, cv, q, subcycle_Δt
+                    )
+                end
 
-
-                if valid_dt_ϵ0
+                if !valid_dt_ϵ0
+                    new_Δt = 0.5subcycle_Δt * ϵ0 / max_ΔT_ϵ0
+                    subcycle_Δt = new_Δt
+                    dt_reduction_needed = true
+                else
                     Δt = subcycle_Δt
                     break
-                else
-                    new_Δt = 0.5subcycle_Δt * ϵ0 / max_ΔT_ϵ0
-                    str = @sprintf(
-                        "Reducing Δt based on the ϵ0 constraint from %.3e to %.3e",
-                        subcycle_Δt,
-                        new_Δt
-                    )
-                    @info str
-                    subcycle_Δt = new_Δt
                 end
             end
         end
 
+        # if dt_reduction_needed
+        #     @info "SSIDiffusion -- Δt reduction needed based on the ϵ0 constraint"
+        # end
+
         # Find τᵢⱼ, the temperature increment for the current cell
         @timeit "temp_increment" begin
-            increment_temp!(SSI.τ, ρⁿ, mesh.volume , SSI.H, SSI.a, SSI.b, q, SSI.δ, cv, Δt, looplimits)
+            increment_temp!(SSI.τ, ρⁿ, mesh.volume, SSI.H, SSI.a, SSI.b, q, SSI.δ, cv, Δt, looplimits)
         end
 
-        @timeit "finite_val_check(τ)" finite_val_check(τ)
+        # @timeit "finite_val_check(τ)" finite_val_check(τ, mesh.nghost, "τ")
 
         # Calculate the energy lost (δ̃ᵢⱼₘ) at each face
         @timeit "energy_lost" begin
-        for j in jlo:(jhi + 1)
-            for i in ilo:(ihi + 1)
-                δ̃[1, i, j] = (a[1, i, j] * τ[i, j] + b[1, i, j] * τ[i, j - 1])
-                δ̃[2, i, j] = (a[2, i, j] * τ[i, j] + b[2, i, j] * τ[i - 1, j])
+            for j in jlo:(jhi+1)
+                for i in ilo:(ihi+1)
+                    δ̃[1, i, j] = (a[1, i, j] * τ[i, j] + b[1, i, j] * τ[i, j-1])
+                    δ̃[2, i, j] = (a[2, i, j] * τ[i, j] + b[2, i, j] * τ[i-1, j])
+                end
             end
-        end
         end
 
         # determine the energy correction (δᵢⱼ) for the next timestep
@@ -416,7 +392,7 @@ function _solve_single!(
             energy_correction!(SSI.δ, SSI.Χ, SSI.δ̃, Δt, looplimits)
         end
 
-        @timeit "finite_val_check(δ)" finite_val_check(δ)
+        # @timeit "finite_val_check(δ)" finite_val_check(δ, mesh.nghost, "δ")
 
         # check the ϵ1 constraint based on maximum energy correction (δ)
         if fixed_dt
@@ -431,20 +407,20 @@ function _solve_single!(
             break
         else
             new_Δt = 0.5subcycle_Δt * ϵ1 / max_ΔT_ϵ1
-            @info @sprintf(
-                "Reducing Δt based on the ϵ1 constraint from %.3e to %.3e",
-                subcycle_Δt,
-                new_Δt
-            )
+            # @info @sprintf(
+            #     "SSIDiffusion -- Reducing Δt based on the ϵ1 constraint from %.3e to %.3e",
+            #     subcycle_Δt,
+            #     new_Δt
+            # )
             subcycle_Δt = new_Δt
         end
     end
 
     # update the temperature
     @timeit "update_next" begin
-    @batch for idx in eachindex(Tⁿ⁺¹)
-        @inbounds Tⁿ⁺¹[idx] = Tⁿ[idx] + τ[idx]
-    end
+        @batch for idx in eachindex(Tⁿ⁺¹)
+            @inbounds Tⁿ⁺¹[idx] = Tⁿ[idx] + τ[idx]
+        end
     end
 
     return Δt
@@ -462,8 +438,8 @@ function increment_temp!(τ, ρ, vol, H, a, b, q, δ, cv, Δt, looplimits::NTupl
 
             Mᵢⱼ = ρ[i, j] * vol[i, j]
 
-            H1 = H[1, i, j] - H[1, i, j + 1]
-            H2 = H[2, i, j] - H[2, i + 1, j]
+            H1 = H[1, i, j] - H[1, i, j+1]
+            H2 = H[2, i, j] - H[2, i+1, j]
             H1 = H1 * (abs(H1) >= ϵ_tol)
             H2 = H2 * (abs(H2) >= ϵ_tol)
             # Hsum = round(H1 + H2, sigdigits=SD)
@@ -472,7 +448,7 @@ function increment_temp!(τ, ρ, vol, H, a, b, q, δ, cv, Δt, looplimits::NTupl
             τ[i, j] = (
                 (Δt * (Hsum + q[i, j] * Mᵢⱼ) + δ[i, j]) / (
                     cv[i, j] * Mᵢⱼ +
-                    (a[1, i, j] + a[2, i, j] + b[1, i, j + 1] + b[2, i + 1, j]) * Δt
+                    (a[1, i, j] + a[2, i, j] + b[1, i, j+1] + b[2, i+1, j]) * Δt
                 )
             )
         end
@@ -491,8 +467,8 @@ function energy_correction!(δ, Χ, δ̃, Δt::Float64, looplimits::NTuple{4,Int
                 (
                     Χ[1, i, j] * δ̃[1, i, j] +
                     Χ[2, i, j] * δ̃[2, i, j] +
-                    (1.0 - Χ[1, i, j + 1]) * δ̃[1, i, j + 1] +
-                    (1.0 - Χ[2, i + 1, j]) * δ̃[2, i + 1, j]
+                    (1.0 - Χ[1, i, j+1]) * δ̃[1, i, j+1] +
+                    (1.0 - Χ[2, i+1, j]) * δ̃[2, i+1, j]
                 ) * Δt
 
             # δ[i, j] = round(δij, sigdigits=SD)
@@ -502,38 +478,12 @@ function energy_correction!(δ, Χ, δ̃, Δt::Float64, looplimits::NTuple{4,Int
     return nothing
 end
 
-"""Determine the appropriate timestep based on the τ constraint"""
-function subcycle_tau_constraint_timestep(SSI::SSISolver2D, mesh, Tⁿ, ρⁿ, cv, q, subcycle_Δt)
-    Δt = 0.0
-    ϵ0 = get_ϵ0(SSI)
-
-    # Loop until we get a valid timestep
-    while true
-        valid_dt_ϵ0, max_ΔT_ϵ0 = check_τ_constraint(SSI, mesh, Tⁿ, ρⁿ, cv, q, subcycle_Δt)
-
-        if valid_dt_ϵ0
-            Δt = subcycle_Δt
-            break
-        else
-            new_Δt = 0.5subcycle_Δt * ϵ0 / max_ΔT_ϵ0
-            @info @sprintf(
-                "Reducing Δt based on the ϵ0 constraint from %.3e to %.3e",
-                subcycle_Δt,
-                new_Δt
-            )
-            subcycle_Δt = new_Δt
-        end
-    end
-
-    return Δt
-end
-
 """Check for non-finite values in A with a ghost cell layer `nghost` cells thick"""
-function finite_val_check(A, nghost=0)
+function finite_val_check(A, nghost, val::String)
     iterator_range = getcartind(A, nghost)
     for I in iterator_range
         if !isfinite(A[I])
-            error("Non-finite values found at $(I)")
+            error("Non-finite $(val) values found at $(I) -> $(A[I])")
         end
     end
 end
@@ -567,12 +517,12 @@ function calc_timestep(SSI::SSISolver2D, mesh, Tⁿ, ρⁿ, cv, q)
             M = ρⁿ[i, j] * mesh.volume[i, j]
             cvM = cv[i, j] * M
 
-            H1 = H[1, i, j] - H[1, i, j + 1]
-            H2 = H[2, i, j] - H[2, i + 1, j]
+            H1 = H[1, i, j] - H[1, i, j+1]
+            H2 = H[2, i, j] - H[2, i+1, j]
 
             W_T = H1 + H2
 
-            D_T = a[1, i, j] + a[2, i, j] + b[1, i, j + 1] + b[2, i + 1, j]
+            D_T = a[1, i, j] + a[2, i, j] + b[1, i, j+1] + b[2, i+1, j]
 
             Δt = abs(cvM / ((abs(W_T + q[i, j] * M) / ((ϵ0 - ϵ1) * (Ts + Tⁿ[i, j]))) - D_T))
 
@@ -614,12 +564,12 @@ function check_τ_constraint(SSI::SSISolver2D, mesh, T, ρ, cv, q, Δt)
             τ0ᵢⱼ = abs(
                 (
                     (
-                        H[1, i, j] + H[2, i, j] - H[1, i, j + 1] - H[2, i + 1, j] +
+                        H[1, i, j] + H[2, i, j] - H[1, i, j+1] - H[2, i+1, j] +
                         q[i, j] * Mᵢⱼ
                     ) * Δt
                 ) / (
                     cv[i, j] * Mᵢⱼ +
-                    (a[1, i, j] + a[2, i, j] + b[1, i, j + 1] + b[2, i + 1, j]) * Δt
+                    (a[1, i, j] + a[2, i, j] + b[1, i, j+1] + b[2, i+1, j]) * Δt
                 ),
             )
 
@@ -635,37 +585,6 @@ function check_τ_constraint(SSI::SSISolver2D, mesh, T, ρ, cv, q, Δt)
     valid_Δt = max_ΔT <= (ϵ0 - ϵ1)
 
     return valid_Δt, max_ΔT
-end
-
-function next_subcycle_dt_ϵ0(SSI, mesh, Tⁿ, ρⁿ, cv, q, dt, subcycle_Δt, fixed_dt)
-    ϵ1 = get_ϵ1(SSI)
-    ϵ0 = get_ϵ0(SSI)
-
-    if fixed_dt
-        Δt = dt
-    else
-        while true
-            valid_dt_ϵ0, max_ΔT_ϵ0 = check_τ_constraint(
-                SSI, mesh, Tⁿ, ρⁿ, cv, q, subcycle_Δt
-            )
-
-            if valid_dt_ϵ0
-                Δt = subcycle_Δt
-                break
-            else
-                new_Δt = 0.5subcycle_Δt * ϵ0 / max_ΔT_ϵ0
-                str = @sprintf(
-                    "Reducing Δt based on the ϵ0 constraint from %.3e to %.3e",
-                    subcycle_Δt,
-                    new_Δt
-                )
-                @info str
-                subcycle_Δt = new_Δt
-            end
-        end
-    end
-
-    return subcycle_Δt
 end
 
 function calc_δ_constraint(SSI::SSISolver2D, T, ρ, cv, mesh)
@@ -717,8 +636,8 @@ Find the split weights Χ that are proportional to the bulk heat capacities of e
     jlohi = axes(ρ, 2)
     ilo = first(ilohi) + mesh.nghost
     jlo = first(jlohi) + mesh.nghost
-    ihi = last(ilohi) - mesh.nghost+1
-    jhi = last(jlohi) - mesh.nghost+1
+    ihi = last(ilohi) - mesh.nghost + 1
+    jhi = last(jlohi) - mesh.nghost + 1
 
     C⁺Δ = mesh.C⁺Δᵢⱼ
     C⁻Δ = mesh.C⁻Δᵢⱼ
@@ -728,8 +647,8 @@ Find the split weights Χ that are proportional to the bulk heat capacities of e
 
             C⁺Δᵢⱼ₁ = C⁺Δ[1, i, j] * cv[i, j] * ρ[i, j]
             C⁺Δᵢⱼ₂ = C⁺Δ[2, i, j] * cv[i, j] * ρ[i, j]
-            C⁻Δᵢⱼ₁ = C⁻Δ[1, i, j] * cv[i, j - 1] * ρ[i, j - 1]
-            C⁻Δᵢⱼ₂ = C⁻Δ[2, i, j] * cv[i - 1, j] * ρ[i - 1, j]
+            C⁻Δᵢⱼ₁ = C⁻Δ[1, i, j] * cv[i, j-1] * ρ[i, j-1]
+            C⁻Δᵢⱼ₂ = C⁻Δ[2, i, j] * cv[i-1, j] * ρ[i-1, j]
 
             Χ[1, i, j] = C⁺Δᵢⱼ₁ / (C⁺Δᵢⱼ₁ + C⁻Δᵢⱼ₁)
             Χ[2, i, j] = C⁺Δᵢⱼ₂ / (C⁺Δᵢⱼ₂ + C⁻Δᵢⱼ₂)
@@ -770,7 +689,7 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
     jhi = last(jlohi) - nghost
 
     # Loop through the domain cells
-    iterator_range = CartesianIndices((ilo:(ihi + 1), jlo:(jhi + 1)))
+    iterator_range = CartesianIndices((ilo:(ihi+1), jlo:(jhi+1)))
 
     @batch for idx in iterator_range
         i, j = Tuple(idx)
@@ -779,8 +698,8 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
         x⃗ᵢ₊₁ⱼ = SVector{2,Float64}(view(coords, :, i + 1, j))
         x⃗ᵢⱼ₊₁ = SVector{2,Float64}(view(coords, :, i, j + 1))
         x⃗cᵢⱼ = centroids[i, j]
-        x⃗cᵢⱼ₋₁ = centroids[i, j - 1]
-        x⃗cᵢ₋₁ⱼ = centroids[i - 1, j]
+        x⃗cᵢⱼ₋₁ = centroids[i, j-1]
+        x⃗cᵢ₋₁ⱼ = centroids[i-1, j]
 
         # vector connecting the vertices that define the face
         Ivᵢⱼₘ = @SVector [
@@ -804,20 +723,20 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
 
         # Equations 30 & 31
         ΔTvᵢⱼₘ = @SVector [
-            Tv[i + 1, j] - Tv[i, j], # m = 1
-            Tv[i, j + 1] - Tv[i, j], # m = 2
+            Tv[i+1, j] - Tv[i, j], # m = 1
+            Tv[i, j+1] - Tv[i, j], # m = 2
         ]
 
         ΔTcᵢⱼₘ = @SVector [
-            Tc[i, j] - Tc[i, j - 1], # m = 1
-            Tc[i, j] - Tc[i - 1, j], # m = 2
+            Tc[i, j] - Tc[i, j-1], # m = 1
+            Tc[i, j] - Tc[i-1, j], # m = 2
         ]
 
         # interpolation coefficients used in aᵢⱼₘ and bᵢⱼₘ
-        μaᵢⱼ₁ = μ[1, i, j] - μ[2, i + 1, j]
-        μaᵢⱼ₂ = μ[1, i, j] - μ[4, i, j + 1]
-        μbᵢⱼ₁ = μ[3, i + 1, j] - μ[4, i, j]
-        μbᵢⱼ₂ = μ[3, i, j + 1] - μ[2, i, j]
+        μaᵢⱼ₁ = μ[1, i, j] - μ[2, i+1, j]
+        μaᵢⱼ₂ = μ[1, i, j] - μ[4, i, j+1]
+        μbᵢⱼ₁ = μ[3, i+1, j] - μ[4, i, j]
+        μbᵢⱼ₂ = μ[3, i, j+1] - μ[2, i, j]
 
         # check for machine epsilon (zero-out if less than ~1e-15 for Float64)
         μaᵢⱼ₁ = μaᵢⱼ₁ * (abs(μaᵢⱼ₁) >= ϵ)
@@ -828,8 +747,8 @@ function face_centered_flux!(H::AbstractArray{T}, a, b, Tc, Tv, κ, μ, mesh) wh
         μb = @SVector [μbᵢⱼ₁, μbᵢⱼ₂]
 
         κfᵢⱼₘ = @SVector [
-            face_conductivity(AΔ⁺[1, i, j], AΔ⁻[1, i, j], κ[i, j], κ[i, j - 1]),
-            face_conductivity(AΔ⁺[2, i, j], AΔ⁻[2, i, j], κ[i, j], κ[i - 1, j]),
+            face_conductivity(AΔ⁺[1, i, j], AΔ⁻[1, i, j], κ[i, j], κ[i, j-1]),
+            face_conductivity(AΔ⁺[2, i, j], AΔ⁻[2, i, j], κ[i, j], κ[i-1, j]),
         ]
 
         # these terms are re-used in 3 equations
@@ -878,7 +797,7 @@ end
 Find the vertex temperatures using the bi-linear interpolation coefficients
 """
 function vertex_temperatures!(
-    Tvertex::AbstractArray{T,2}, Tcell::AbstractArray{T,2}, μ::AbstractArray{T,3}, nghost=1
+    Tvertex::AbstractArray{T,2}, Tcell::AbstractArray{T,2}, μ::AbstractArray{T,3}, nghost
 ) where {T}
     iterator_range = getcartind(Tvertex, nghost)
 
@@ -888,9 +807,9 @@ function vertex_temperatures!(
 
         Tvertex[i, j] = (
             μᵢⱼ[1] * Tcell[i, j] +
-            μᵢⱼ[2] * Tcell[i - 1, j] +
-            μᵢⱼ[3] * Tcell[i - 1, j - 1] +
-            μᵢⱼ[4] * Tcell[i, j - 1]
+            μᵢⱼ[2] * Tcell[i-1, j] +
+            μᵢⱼ[3] * Tcell[i-1, j-1] +
+            μᵢⱼ[4] * Tcell[i, j-1]
         )
     end
 
@@ -911,8 +830,8 @@ function interp_coeff!(
     jlohi = axes(κcell, 2)
     ilo = first(ilohi) + nghost
     jlo = first(jlohi) + nghost
-    ihi = last(ilohi) - nghost+1
-    jhi = last(jlohi) - nghost+1
+    ihi = last(ilohi) - nghost + 1
+    jhi = last(jlohi) - nghost + 1
 
     # This is a vertex-based loop, thus the ihi+1 upper range. Here
     # ihi is the last cell index in the domain
@@ -922,9 +841,9 @@ function interp_coeff!(
             # Eq. 38
             βᵢⱼ = SVector{4,T}(
                 κcell[i, j] * (1 + ξ[i, j]) * (1 + η[i, j]),
-                κcell[i - 1, j] * (1 - ξ[i, j]) * (1 + η[i, j]),
-                κcell[i - 1, j - 1] * (1 - ξ[i, j]) * (1 - η[i, j]),
-                κcell[i, j - 1] * (1 + ξ[i, j]) * (1 - η[i, j]),
+                κcell[i-1, j] * (1 - ξ[i, j]) * (1 + η[i, j]),
+                κcell[i-1, j-1] * (1 - ξ[i, j]) * (1 - η[i, j]),
+                κcell[i, j-1] * (1 + ξ[i, j]) * (1 - η[i, j]),
             )
 
             βᵢⱼsum = sum(βᵢⱼ)
@@ -965,12 +884,12 @@ function update_Χ_bc!(Χ, nghost)
     # for all BC types
     for j in jlohi
         Χ[2, ilo, j] = 1
-        Χ[2, ihi + 1, j] = 0
+        Χ[2, ihi+1, j] = 0
     end
 
     for i in ilohi
         Χ[1, i, jlo] = 1
-        Χ[1, i, jhi + 1] = 0
+        Χ[1, i, jhi+1] = 0
     end
 
     return nothing
@@ -989,12 +908,12 @@ function update_Hab_bc!(H, a, b, bcs, nghost)
     # for all BC types
     for j in jlohi
         b[2, ilo, j] = 0
-        a[2, ihi + 1, j] = 0
+        a[2, ihi+1, j] = 0
     end
 
     for i in ilohi
         b[1, i, jlo] = 0
-        a[1, i, jhi + 1] = 0
+        a[1, i, jhi+1] = 0
     end
 
     # for flux-specified types
@@ -1020,17 +939,17 @@ function update_Hab_bc!(H, a, b, bcs, nghost)
     # ihi BC
     if bcs.ihi === :zeroflux
         for j in jlohi
-            H[2, ihi + 1, j] = 0
-            a[2, ihi + 1, j] = 0
-            b[2, ihi + 1, j] = 0
+            H[2, ihi+1, j] = 0
+            a[2, ihi+1, j] = 0
+            b[2, ihi+1, j] = 0
         end
 
     elseif bcs.ihi isa Tuple{Symbol,Number}
         if bcs.ihi[1] === :flux
             for j in jlohi
-                H[2, ihi + 1, j] = bcs.ihi[2]
-                a[2, ihi + 1, j] = 0
-                b[2, ihi + 1, j] = 0
+                H[2, ihi+1, j] = bcs.ihi[2]
+                a[2, ihi+1, j] = 0
+                b[2, ihi+1, j] = 0
             end
         end
     end
@@ -1056,17 +975,17 @@ function update_Hab_bc!(H, a, b, bcs, nghost)
     # jhi BC
     if bcs.jhi === :zeroflux
         for i in ilohi
-            H[1, i, jhi + 1] = 0
-            a[1, i, jhi + 1] = 0
-            b[1, i, jhi + 1] = 0
+            H[1, i, jhi+1] = 0
+            a[1, i, jhi+1] = 0
+            b[1, i, jhi+1] = 0
         end
 
     elseif bcs.jhi isa Tuple{Symbol,Number}
         if bcs.jhi[1] === :flux
             for i in ilohi
-                H[1, i, jhi + 1] = bcs.jhi[2]
-                a[1, i, jhi + 1] = 0
-                b[1, i, jhi + 1] = 0
+                H[1, i, jhi+1] = bcs.jhi[2]
+                a[1, i, jhi+1] = 0
+                b[1, i, jhi+1] = 0
             end
         end
     end
@@ -1085,8 +1004,8 @@ function update_bilinear_coeff!(
 ) where {N,T}
     ilohi = axes(mesh.volume, 1)
     jlohi = axes(mesh.volume, 2)
-    ilo = first(ilohi) + mesh.nghost + 1 
-    jlo = first(jlohi) + mesh.nghost + 1 
+    ilo = first(ilohi) + mesh.nghost + 1
+    jlo = first(jlohi) + mesh.nghost + 1
     ihi = last(ilohi) - mesh.nghost
     jhi = last(jlohi) - mesh.nghost
 
@@ -1096,9 +1015,9 @@ function update_bilinear_coeff!(
         for i in ilo:ihi
             x0 = SVector{2,Float64}(view(mesh.coords, :, i, j))
             x1 = mesh.centroid[i, j]
-            x2 = mesh.centroid[i - 1, j]
-            x3 = mesh.centroid[i - 1, j - 1]
-            x4 = mesh.centroid[i, j - 1]
+            x2 = mesh.centroid[i-1, j]
+            x3 = mesh.centroid[i-1, j-1]
+            x4 = mesh.centroid[i, j-1]
 
             # x0 = mesh.centroid[i, j]
             # x1 = SVector{2,Float64}(view(mesh.coords, :, i, j))
